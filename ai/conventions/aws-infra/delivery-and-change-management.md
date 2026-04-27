@@ -17,6 +17,24 @@ Conventions:
 - review destructive actions explicitly before approving apply
 - avoid mixing unrelated infrastructure changes into one plan when possible
 
+```bash
+# dev workflow
+terraform init
+terraform plan  -var-file=dev.tfvars  -out=dev.tfplan
+terraform apply dev.tfplan
+
+# production workflow — same pattern, different tfvars
+terraform plan  -var-file=prod.tfvars -out=prod.tfplan
+terraform apply prod.tfplan
+
+# pass sensitive values that are not in tfvars via environment vars
+TF_VAR_db_password=$DB_PASSWORD \
+TF_VAR_stripe_secret_key=$STRIPE_KEY \
+terraform apply prod.tfplan
+```
+
+Saving the plan to a file with `-out` ensures that the `apply` step executes exactly the change that was reviewed.
+
 ## Remote State
 
 Remote state with locking is mandatory for team safety.
@@ -27,6 +45,21 @@ Conventions:
 - keep locking in DynamoDB or the chosen equivalent
 - do not use local state for shared environments
 - treat backend bootstrap separately and document it clearly
+
+```hcl
+# backend.tf
+terraform {
+  backend "s3" {
+    bucket         = "peakreps-terraform-state"
+    key            = "peakreps/terraform.tfstate"
+    region         = "ap-southeast-2"
+    dynamodb_table = "terraform-locks"  # prevents concurrent apply
+    encrypt        = true
+  }
+}
+```
+
+> The S3 bucket and DynamoDB table must exist before running `terraform init`. Bootstrap them manually or with a one-time Terraform root the first time.
 
 ## Environment Management
 

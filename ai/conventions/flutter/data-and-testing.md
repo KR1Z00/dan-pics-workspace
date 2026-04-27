@@ -32,6 +32,35 @@ Conventions:
 - keep path strings centralized rather than scattered across methods
 - avoid concatenating raw URLs inline in service code or blocs
 
+```dart
+// packages/peakreps_domain/lib/client/repository/client_repository_impl.dart
+class ClientRepositoryImpl implements ClientRepository {
+  ClientRepositoryImpl(this._api);
+
+  final ApiClient _api;
+
+  // all paths in one place — never scattered across methods
+  static const _Endpoints _endpoints = _Endpoints();
+
+  @override
+  Future<List<ClientModel>> listClients(String businessId) async {
+    final response = await _api.get(_endpoints.list(businessId));
+    final data = response.data as List<dynamic>;
+    return data.map((e) => ClientModel.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  @override
+  Future<void> removeClient(String businessId, String clientId) =>
+      _api.delete(_endpoints.single(businessId, clientId));
+}
+
+class _Endpoints {
+  const _Endpoints();
+  String list(String businessId)   => 'business/$businessId/clients';
+  String single(String id, String clientId) => 'business/$id/clients/$clientId';
+}
+```
+
 ## API Client Usage
 
 Networking should enter through shared core infrastructure.
@@ -116,6 +145,46 @@ Conventions:
 - keep mocks close to the feature area that owns them or in shared test helpers when reused broadly
 - stub only behavior relevant to the test
 - avoid sprawling fixture builders that hide important scenario details
+
+```dart
+// packages/peakreps_domain/test/client/service/client_service_test.dart
+import 'package:mocktail/mocktail.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+class MockClientRepository extends Mock implements ClientRepository {}
+
+void main() {
+  late ClientService service;
+  late MockClientRepository repository;
+
+  setUp(() {
+    repository = MockClientRepository();
+    service    = ClientServiceImpl(repository);
+  });
+
+  group('ClientService.removeClient', () {
+    test('delegates to repository', () async {
+      when(() => repository.removeClient('biz-1', 'c-1'))
+          .thenAnswer((_) async {});
+
+      await service.removeClient('biz-1', 'c-1');
+
+      verify(() => repository.removeClient('biz-1', 'c-1')).called(1);
+    });
+  });
+
+  group('ClientService.listClients', () {
+    test('returns mapped models', () async {
+      final models = [ClientModel(id: '1', firstName: 'Alice', lastName: 'A', email: 'a@x.com')];
+      when(() => repository.listClients('biz-1')).thenAnswer((_) async => models);
+
+      final result = await service.listClients('biz-1');
+
+      expect(result, models);
+    });
+  });
+}
+```
 
 ## Workflow And Review Expectations
 

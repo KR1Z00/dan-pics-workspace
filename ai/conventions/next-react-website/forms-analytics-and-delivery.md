@@ -37,6 +37,39 @@ Conventions:
 - name events consistently so marketing and product analysis stay usable over time
 - avoid sprinkling raw analytics initialization logic across route files
 
+```tsx
+// app/providers.js — single place where PostHog is initialized
+'use client';
+import posthog from 'posthog-js';
+import { PostHogProvider } from 'posthog-js/react';
+
+if (typeof window !== 'undefined') {
+  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
+    api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+    person_profiles: 'identified_only',
+  });
+}
+
+export default function Providers({ children }) {
+  return <PostHogProvider client={posthog}>{children}</PostHogProvider>;
+}
+```
+
+```tsx
+// tracking events — use posthog.capture from usePostHog hook
+import { usePostHog } from 'posthog-js/react';
+
+const posthog = usePostHog();
+
+// ✅ meaningful, consistently named events
+posthog.capture('sign_up_form_submitted', { source: 'hero_cta' });
+posthog.capture('pricing_cta_clicked',   { plan: 'growth' });
+
+// ❌ avoid generic or misspelled event names that make analysis hard
+posthog.capture('click');           // too vague
+posthog.capture('signupFormSent'); // inconsistent naming style
+```
+
 ## Performance
 
 Marketing sites need speed as part of the product impression.

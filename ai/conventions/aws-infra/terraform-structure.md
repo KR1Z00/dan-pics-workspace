@@ -48,6 +48,41 @@ Conventions:
 - prefer explicit environment tfvars over editing defaults for deployment changes
 - do not commit secrets to tfvars files that live in source control
 
+```hcl
+# variables.tf
+variable "environment" {
+  description = "Deployment environment: prod or dev"
+  type        = string
+  default     = "prod"
+}
+
+variable "aws_region" {
+  description = "AWS region to deploy into"
+  type        = string
+  default     = "ap-southeast-2"
+}
+
+variable "db_password" {
+  description = "Master password for the RDS Postgres instance"
+  type        = string
+  sensitive   = true  # never logged or shown in plan output
+}
+
+variable "stripe_secret_key" {
+  description = "Stripe secret API key injected from CI or Secrets Manager"
+  type        = string
+  sensitive   = true
+}
+```
+
+```hcl
+# dev.tfvars — safe to commit (no secrets)
+environment = "dev"
+aws_region  = "ap-southeast-2"
+app_base_url = "https://app-dev.peakreps.com"
+# db_password and stripe_secret_key supplied via CI env vars, not in this file
+```
+
 Good variable categories:
 
 - environment and region
@@ -68,6 +103,30 @@ Appropriate uses:
 - small repeated configuration fragments
 
 Avoid using locals to hide important infrastructure intent or create a second abstraction language inside Terraform.
+
+```hcl
+# main.tf
+locals {
+  # single source of truth for resource naming
+  prefix = var.environment == "prod" ? "peakreps" : "peakreps-dev"
+
+  # reused tag block — merge into resource tags blocks
+  common_tags = {
+    ManagedBy   = "Terraform"
+    Environment = var.environment
+  }
+}
+
+# usage in a resource
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+
+  tags = merge(local.common_tags, {
+    Name = "${local.prefix}-vpc"
+  })
+}
+```
 
 ## Tagging
 
@@ -106,3 +165,26 @@ Avoid outputting:
 - values that encourage copy-paste of insecure connection strings
 
 If a connection string is output, keep it templated or clearly safe for operational use.
+
+```hcl
+# outputs.tf
+output "alb_dns_name" {
+  description = "DNS name of the application load balancer"
+  value       = aws_alb.main.dns_name
+}
+
+output "ecr_repository_url" {
+  description = "ECR URL for pushing and pulling the backend container image"
+  value       = aws_ecr_repository.backend.repository_url
+}
+
+output "ecs_cluster_name" {
+  description = "ECS cluster name for deployment scripts"
+  value       = aws_ecs_cluster.main.name
+}
+
+# ❌ avoid — leaks credentials in plan and state output
+output "db_password" {
+  value = var.db_password
+}
+```

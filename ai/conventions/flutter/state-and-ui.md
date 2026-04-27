@@ -37,6 +37,60 @@ Conventions:
 - prefer immutable state updates
 - keep side effects inside the bloc, not in widget callbacks beyond dispatching events
 
+```dart
+// lib/auth/bloc/login_bloc.dart
+part 'login_event.dart';
+part 'login_state.dart';
+
+class LoginBloc extends Bloc<LoginEvent, LoginState> {
+  LoginBloc(this._authService) : super(const LoginState.initial()) {
+    on<LoginSubmitted>(_onSubmitted);
+  }
+
+  final AuthService _authService;
+
+  Future<void> _onSubmitted(LoginSubmitted event, Emitter<LoginState> emit) async {
+    emit(const LoginState.loading());
+    try {
+      final user = await _authService.signIn(event.email, event.password);
+      emit(LoginState.success(user));
+    } on AuthException catch (e) {
+      emit(LoginState.failure(e.message));
+    }
+  }
+}
+```
+
+```dart
+// lib/auth/bloc/login_event.dart
+part of 'login_bloc.dart';
+
+sealed class LoginEvent extends Equatable {
+  const LoginEvent();
+  @override List<Object?> get props => [];
+}
+
+final class LoginSubmitted extends LoginEvent {
+  const LoginSubmitted({ required this.email, required this.password });
+  final String email;
+  final String password;
+  @override List<Object?> get props => [email, password];
+}
+```
+
+```dart
+// lib/auth/bloc/login_state.dart
+part of 'login_bloc.dart';
+
+@freezed
+sealed class LoginState with _$LoginState {
+  const factory LoginState.initial()            = LoginInitial;
+  const factory LoginState.loading()            = LoginLoading;
+  const factory LoginState.success(UserModel u) = LoginSuccess;
+  const factory LoginState.failure(String msg)  = LoginFailure;
+}
+```
+
 Avoid:
 
 - putting validation, DTO parsing, or API details directly in widgets
@@ -61,6 +115,28 @@ Conventions:
 - avoid mutable setters and manual copy logic
 - prefer one model per file unless two types are inseparable and tiny
 
+```dart
+// packages/peakreps_domain/lib/client/model/client_model.dart
+import 'package:freezed_annotation/freezed_annotation.dart';
+
+part 'client_model.freezed.dart';
+part 'client_model.g.dart';
+
+@freezed
+class ClientModel with _$ClientModel {
+  const factory ClientModel({
+    required String id,
+    required String firstName,
+    required String lastName,
+    required String email,
+    String? avatarUrl,
+  }) = _ClientModel;
+
+  factory ClientModel.fromJson(Map<String, dynamic> json) =>
+      _$ClientModelFromJson(json);
+}
+```
+
 ## Widgets And Screens
 
 Screens should orchestrate sections and providers, not become giant rendering files.
@@ -77,6 +153,33 @@ Conventions:
 - keep widgets focused on rendering and delegating callbacks
 - use meaningful widget names based on user-facing function, not layout trivia
 - give important interactive elements stable keys using the existing `Key("{pageName}_{elementName}")` pattern
+
+```dart
+// page widget: thin orchestrator
+class ClientListPage extends StatelessWidget {
+  const ClientListPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(tr(LocaleKeys.clients_title))),
+      body: BlocBuilder<ClientListBloc, ClientListState>(
+        builder: (context, state) => switch (state) {
+          ClientListLoading() => const _LoadingBody(),
+          ClientListEmpty()   => const _EmptyBody(),
+          ClientListLoaded(:final clients) => _ClientList(clients: clients),
+          ClientListError(:final message) => _ErrorBody(message: message),
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        key: const Key('clientList_addClient'),
+        onPressed: () => context.pushRoute(AppRoute.inviteClient),
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
+```
 
 ## Forms
 

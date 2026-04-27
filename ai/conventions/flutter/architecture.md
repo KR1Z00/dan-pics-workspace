@@ -88,6 +88,29 @@ Conventions for enforcing that direction:
 - never import another package's `src/` internals
 - run `melos run check-deps` before merging architectural work
 
+```yaml
+# packages/peakreps_feature/pubspec.yaml
+dependencies:
+  peakreps_domain:
+    path: ../peakreps_domain
+  peakreps_core:
+    path: ../peakreps-core
+  flutter_bloc: ^8.1.5
+  go_router: ^14.0.0
+  # ❌ do NOT add peakreps_feature as a dep from peakreps_domain
+```
+
+```dart
+// ✅ correct: package: import across boundary
+import 'package:peakreps_domain/auth/model/user_profile_model.dart';
+
+// ❌ wrong: relative import that pierces the boundary
+import '../../peakreps_domain/lib/auth/model/user_profile_model.dart';
+
+// ❌ wrong: importing src/ internals
+import 'package:peakreps_domain/src/auth/internal_helper.dart';
+```
+
 ## Package Structure
 
 Each package should expose a clear public API.
@@ -135,6 +158,42 @@ Do not:
 - resolve dependencies at import time
 - bypass abstractions by depending directly on a concrete implementation in higher layers
 
+```dart
+// packages/peakreps_domain/lib/auth/auth_assembly.dart
+class AuthAssembly implements DependencyAssembly {
+  @override
+  void register(GetIt locator) {
+    locator.registerLazySingleton<AuthRepository>(
+      () => AuthRepositoryImpl(locator<ApiClient>()),
+    );
+    locator.registerLazySingleton<EmailVerificationService>(
+      () => EmailVerificationServiceImpl(locator<AuthRepository>()),
+    );
+  }
+}
+
+// apps/peakreps-trainer/lib/app/dependency_injection.dart
+final assemblies = [
+  ...coreAssemblies(),
+  ...domainAssemblies(UserPersona.trainer),
+  ...featureAssemblies(),
+];
+
+void setupDependencies() {
+  for (final assembly in assemblies) {
+    assembly.register(locator);
+  }
+}
+```
+
+```dart
+// resolving — always use the abstract type
+final service = locator<EmailVerificationService>();
+
+// blocs with parameters
+final bloc = locator<LoginBloc>(param1: UserPersona.trainer);
+```
+
 ## Routing
 
 GoRouter should be the standard navigation solution.
@@ -153,6 +212,37 @@ Preferred flow:
 2. route resolves dependencies from `locator`
 3. route wraps page with providers
 4. page triggers events and renders state
+
+```dart
+// apps/peakreps-trainer/lib/app/navigation/router_config.dart
+enum AppRoute implements RouteProtocol {
+  clients(
+    routePath: '/clients',
+    routeName: 'clients',
+  );
+
+  const AppRoute({ required this.routePath, required this.routeName });
+
+  @override final String routePath;
+  @override final String routeName;
+}
+
+// route builder
+GoRoute(
+  path: AppRoute.clients.routePath,
+  name: AppRoute.clients.routeName,
+  builder: (context, state) => BlocProvider.value(
+    value: locator<ClientListBloc>(),
+    child: const ClientListPage(),
+  ),
+),
+```
+
+```dart
+// navigation — use helper, not raw string paths
+context.goRoute(AppRoute.clients);
+context.pushRoute(AppRoute.clientDetail, extra: clientId);
+```
 
 ## Feature Boundaries
 

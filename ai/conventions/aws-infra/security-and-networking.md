@@ -24,6 +24,51 @@ Conventions:
 - keep admin IP ingress narrowly scoped and documented when temporary direct access is needed
 - use dedicated `aws_security_group_rule` resources when they improve clarity or lifecycle safety
 
+```hcl
+# ECS tasks only accept traffic from the ALB — not from the internet directly
+resource "aws_security_group" "ecs" {
+  name        = "${local.prefix}-ecs-sg"
+  description = "Allow inbound from ALB only"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port       = 3000
+    to_port         = 3000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]  # SG reference, not CIDR
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# RDS uses separate rule resources for fine-grained lifecycle control
+resource "aws_security_group_rule" "rds_ingress_ecs" {
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.rds.id
+  source_security_group_id = aws_security_group.ecs.id
+  description              = "Allow ECS tasks to connect to Postgres"
+}
+
+# Admin access is temporary and narrowly scoped by IP
+resource "aws_security_group_rule" "rds_ingress_admin" {
+  type              = "ingress"
+  from_port         = 5432
+  to_port           = 5432
+  protocol          = "tcp"
+  security_group_id = aws_security_group.rds.id
+  cidr_blocks       = [var.my_ip_cidr]  # /32 single IP, never 0.0.0.0/0
+  description       = "Temporary admin access from office IP"
+}
+```
+
 Default intent:
 
 - internet reaches ALB
@@ -43,6 +88,42 @@ Conventions:
 - name IAM roles and policies consistently with the environment prefix
 
 When a task needs S3, SES, Secrets Manager, or other AWS services, grant only the actions it actually uses.
+
+```hcl
+# Task execution role only needs ECR pull and CloudWatch logs
+resource "aws_iam_role" "ecs_task_execution_role" {
+  name = "${local.prefix}-ecs-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_execution_managed" {
+  role       = aws_iam_role.ecs_task_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+# App task role — only the S3 actions the backend actually needs
+resource "aws_iam_policy" "app_s3_access" {
+  name = "${local.prefix}-app-s3-access"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+      Resource = "${aws_s3_bucket.storage.arn}/*"
+      # ❌ do NOT use "s3:*" or "*" just to make it work quickly
+    }]
+  })
+}
+```
 
 ## Secrets
 

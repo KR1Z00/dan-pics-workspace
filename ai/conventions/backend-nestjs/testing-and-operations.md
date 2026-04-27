@@ -27,6 +27,45 @@ Conventions:
 - verify outcomes and side effects, not private implementation details
 - keep tests narrow and intention-revealing
 
+```typescript
+// src/client/client.service.spec.ts
+describe('ClientService', () => {
+  let service: ClientService;
+  let prisma: DeepMockProxy<PrismaService>;
+
+  beforeEach(async () => {
+    prisma = mockDeep<PrismaService>();
+
+    const module = await Test.createTestingModule({
+      providers: [
+        ClientService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: EmailService,  useValue: { sendClientRemovedNotification: jest.fn().mockResolvedValue(undefined) } },
+      ],
+    }).compile();
+
+    service = module.get(ClientService);
+  });
+
+  it('throws NotFoundException when client does not exist', async () => {
+    prisma.client.findFirst.mockResolvedValue(null);
+
+    await expect(service.removeClient('biz-1', 'missing-id')).rejects
+      .toThrow(NotFoundException);
+  });
+
+  it('deletes the client when found', async () => {
+    const client = { id: 'client-1', businessId: 'biz-1' } as any;
+    prisma.client.findFirst.mockResolvedValue(client);
+    prisma.client.delete.mockResolvedValue(client);
+
+    await service.removeClient('biz-1', 'client-1');
+
+    expect(prisma.client.delete).toHaveBeenCalledWith({ where: { id: 'client-1' } });
+  });
+});
+```
+
 ## End-To-End Testing
 
 E2E tests should prove that the real HTTP surface is wired correctly.
@@ -85,6 +124,16 @@ Conventions:
 - log key state transitions, failure points, and external integration failures
 - do not log secrets, tokens, or sensitive personal data
 - rely on interceptors or shared infrastructure for request-level logging where appropriate
+
+```typescript
+// declare at the top of every service that benefits from structured logs
+private readonly logger = new Logger(ClientService.name);
+
+// use the appropriate level
+this.logger.log('Client removed', { clientId, businessId });
+this.logger.warn('Invitation already accepted', { invitationId });
+this.logger.error('S3 upload failed', error.stack);
+```
 
 ## Review Expectations
 

@@ -23,6 +23,17 @@ src/<feature>/
   *.spec.ts
 ```
 
+```typescript
+// src/client/client.module.ts
+@Module({
+  imports: [StorageModule, EmailModule],
+  controllers: [ClientController],
+  providers: [ClientService],
+  exports: [ClientService], // only export if other modules genuinely need it
+})
+export class ClientModule {}
+```
+
 Cross-cutting concerns such as Prisma, auth, storage, and email should remain isolated in dedicated modules.
 
 ## AppModule Composition
@@ -55,6 +66,33 @@ They should not:
 - contain business validation better owned by services
 - silently swallow exceptional cases
 
+```typescript
+// src/client/client.controller.ts
+@Controller('business/:businessId/clients')
+@UseGuards(FirebaseAuthGuard)
+export class ClientController {
+  constructor(private readonly clientService: ClientService) {}
+
+  @Get()
+  @UidRules(AllowIfUserInBusiness())
+  listClients(
+    @Param('businessId') businessId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ClientDto[]> {
+    return this.clientService.listClients(businessId);
+  }
+
+  @Delete(':clientId')
+  @UidRules(AllowIfUserInBusiness())
+  removeClient(
+    @Param('businessId') businessId: string,
+    @Param('clientId') clientId: string,
+  ): Promise<void> {
+    return this.clientService.removeClient(businessId, clientId);
+  }
+}
+```
+
 ## Authentication And Authorization
 
 Protected endpoints should make security obvious.
@@ -67,6 +105,13 @@ Conventions:
 - keep public endpoints intentionally rare and easy to spot
 
 If a controller method needs nuanced access control, extract or compose a rule rather than embedding access logic in the controller body.
+
+```typescript
+// auth-rules usage examples
+@UidRules(AllowIfIsSignedIn())              // any authenticated user
+@UidRules(AllowIfUserInBusiness())          // user must belong to the business param
+@UidRules(AllowIfUserOwnsResource())        // user must own the specific resource
+```
 
 ## Services
 
@@ -84,6 +129,35 @@ Preferred transaction pattern:
 - service methods accept `tx?: PrismaTx` when they may run inside a larger transaction
 - use `const db = tx ?? this.prisma` or equivalent once near the top of the method
 - keep transaction ownership at the orchestration boundary when multiple service calls must succeed or fail together
+
+```typescript
+// src/client/client.service.ts
+@Injectable()
+export class ClientService {
+  private readonly logger = new Logger(ClientService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly emailService: EmailService,
+  ) {}
+
+  async removeClient(businessId: string, clientId: string, tx?: PrismaTx): Promise<void> {
+    const db = tx ?? this.prisma;
+
+    const client = await db.client.findFirst({
+      where: { id: clientId, businessId },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    await db.client.delete({ where: { id: clientId } });
+
+    // non-blocking notification — failure is logged but must not break the response
+    this.emailService
+      .sendClientRemovedNotification(client)
+      .catch((err) => this.logger.error('Failed to send removal email', err));
+  }
+}
+```
 
 ## Orchestration
 

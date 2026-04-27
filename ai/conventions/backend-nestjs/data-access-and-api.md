@@ -11,6 +11,27 @@ Conventions:
 - avoid leaking database naming quirks into DTOs when a cleaner API name is available
 - keep optionality honest; do not mark fields optional just to reduce short-term friction
 
+```typescript
+// src/business/dto/business.dto.ts
+export interface CreateBusinessDto {
+  name: string;
+  brandColour: string;
+}
+
+export interface EditBusinessDto {
+  name?: string;
+  brandColour?: string;
+}
+
+export interface BusinessDto {
+  id: string;
+  name: string;
+  brandColour: string;
+  logoUrl?: string; // presigned URL, never a storage key
+  createdAt: string;
+}
+```
+
 Read DTOs should represent the contract clients are allowed to rely on, not a mirror of Prisma schema.
 
 ## Schema Conversion Pattern
@@ -30,6 +51,39 @@ Benefits:
 - null-to-undefined conversion and URL expansion happen in one place
 - changes to response shape are easier to review
 
+```typescript
+// src/business/business.schema.ts
+import { Prisma } from '@prisma/client';
+import { BusinessDto } from './dto/business.dto';
+
+export const defaultBusinessSelect = {
+  id: true,
+  name: true,
+  brandColour: true,
+  logoStorageKey: true,
+  createdAt: true,
+} satisfies Prisma.BusinessSelect;
+
+export type SelectedBusiness = Prisma.BusinessGetPayload<{
+  select: typeof defaultBusinessSelect;
+}>;
+
+export function convertBusinessToDto(
+  business: SelectedBusiness,
+  logoUrl?: string,
+): BusinessDto {
+  return {
+    id: business.id,
+    name: business.name,
+    brandColour: business.brandColour,
+    logoUrl,                           // presigned URL resolved by caller
+    createdAt: business.createdAt.toISOString(),
+  };
+}
+```
+
+The service fetches with `select: defaultBusinessSelect`, resolves any presigned URLs, then calls the mapper before returning to the controller.
+
 ## Prisma Access
 
 Prisma should remain behind service boundaries.
@@ -42,6 +96,30 @@ Conventions:
 - do not duplicate complex query fragments across controllers and services
 
 When a feature repeatedly needs a complex search or filter rule, extract a helper rather than rebuilding the object inline each time.
+
+```typescript
+// dynamic filter example in a service
+async searchClients(businessId: string, query?: string) {
+  const where: Prisma.ClientWhereInput = {
+    businessId,
+    ...(query && {
+      OR: [
+        { firstName: { contains: query, mode: 'insensitive' } },
+        { lastName:  { contains: query, mode: 'insensitive' } },
+        { email:     { contains: query, mode: 'insensitive' } },
+      ],
+    }),
+  };
+
+  const clients = await this.prisma.client.findMany({
+    where,
+    select: defaultClientSelect,
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return clients.map(convertClientToDto);
+}
+```
 
 ## Null, Undefined, And Storage Boundaries
 
@@ -90,6 +168,16 @@ Conventions:
 - always log failures from detached operations
 - keep the detached side effect idempotent when practical
 - graduate recurring background work into a job or queue abstraction when reliability requirements increase
+
+```typescript
+// fire-and-forget — always catch and log
+this.emailService
+  .sendWelcomeEmail(user)
+  .catch((err) => this.logger.error('Failed to send welcome email', err));
+
+// do NOT do this — silent failure is invisible in production
+this.emailService.sendWelcomeEmail(user); // ❌ no catch
+```
 
 ## API Shape
 

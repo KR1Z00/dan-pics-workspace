@@ -22,6 +22,28 @@ Conventions:
 - add new tokens before introducing one-off hardcoded colors in components
 - keep token names semantic enough that a palette refresh does not require renaming every usage
 
+```css
+/* core/src/styles/globals.css — single source of truth for tokens */
+:root {
+  --primary:           #ABEE1E; /* lime green — CTAs, actions */
+  --on-primary:        #0C1002;
+  --secondary:         #0B81F0; /* electric blue */
+  --surface:           #0D0F13;
+  --surface-container: #25272B;
+  --on-surface:        #F8FAFE;
+  --outline:           #868D9B;
+  --error:             #FF5555;
+}
+```
+
+```tsx
+// ✅ use tokens through Tailwind config or CSS vars — not hardcoded hex
+<button className="bg-primary text-on-primary">Get started</button>
+
+// ❌ wrong — one-off hardcoded color that bypasses the design system
+<button style={{ backgroundColor: '#ABEE1E' }}>Get started</button>
+```
+
 Typography should stay intentional:
 
 - headings use the chosen brand heading font
@@ -38,6 +60,48 @@ Conventions:
 - prefer prop-driven configuration over copy-pasted variants
 - keep component APIs small and semantic
 - use shared wrappers such as content sections or layout shells to enforce spacing and width consistency
+
+```tsx
+// core/src/components/generic/layout/generic-content-section.tsx
+import { cn } from 'core/src/lib/utils';
+import { BackgroundStyle } from 'core/src/model/background-style';
+
+interface GenericContentSectionProps {
+  children: React.ReactNode;
+  background?: BackgroundStyle;
+  className?: string;
+}
+
+export function GenericContentSection({
+  children,
+  background = BackgroundStyle.Surface,
+  className,
+}: GenericContentSectionProps) {
+  return (
+    <section
+      className={cn(
+        'margin-container py-16',
+        background === BackgroundStyle.SurfaceContainer && 'bg-surface-container',
+        className,
+      )}
+    >
+      {children}
+    </section>
+  );
+}
+```
+
+```tsx
+// cn() helper usage for conditional classes
+import { cn } from 'core/src/lib/utils';
+
+// merges Tailwind classes safely, last one wins on conflict
+const classes = cn(
+  'px-4 py-2 rounded',
+  isPrimary && 'bg-primary text-on-primary',
+  isDisabled && 'opacity-50 cursor-not-allowed',
+);
+```
 
 If a component only works in one place because it depends on route-specific context, it probably belongs in `app/` until it proves reusable.
 
