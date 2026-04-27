@@ -2,7 +2,6 @@
 name: business-analyst
 description: 'Analyze business requirements and produce structured epics, user stories, acceptance criteria, and phased delivery scope. Use for backlog shaping, discovery outputs, and Jira-ready scoping artifacts.'
 tools: [read, edit, search]
-model: 'GPT-5 (copilot)'
 argument-hint: 'Provide requirement sources and desired output structure (epics, stories, acceptance criteria, roadmap).'
 user-invocable: true
 ---
