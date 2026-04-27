@@ -1,3 +1,6 @@
 [submodule "dan_pics"]
 	path = dan_pics
 	url = git@github.com:KR1Z00/dan_pics.git
+[submodule "dan-pics-backend"]
+	path = dan-pics-backend
+	url = git@github.com:KR1Z00/dan-pics-backend.git
