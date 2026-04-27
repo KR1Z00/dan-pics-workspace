@@ -1,0 +1,3 @@
+[submodule "dan_pics"]
+	path = dan_pics
+	url = git@github.com:KR1Z00/dan_pics.git
